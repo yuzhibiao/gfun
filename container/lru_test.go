@@ -1,6 +1,30 @@
 package container
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
+
+func TestLRUConcurrent(t *testing.T) {
+	c := NewLRU[int, int](50)
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				k := (g*200 + i) % 40
+				c.Put(k, i)
+				c.Get(k)
+				c.Len()
+				if i%10 == 0 {
+					c.Remove(k)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+}
 
 func TestLRUPutGet(t *testing.T) {
 	c := NewLRU[string, int](2)

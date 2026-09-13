@@ -74,8 +74,7 @@ import "github.com/yuzhibiao/gfun/concurrent"
 
 // channel 工具
 ch := concurrent.Generate(1, 2, 3)
-vals := concurrent.Take(ch, 2) // [1 2]
-// 消费方可能提前退出的场景用 GenerateCtx，避免 goroutine 泄漏
+vals := concurrent.Take(ch, 2) // [1 2]，内部无 goroutine，提前退出不泄漏
 
 // 泛型并发 map（sync.Map 的类型安全替代）
 m := concurrent.NewMap[string, int]()
@@ -140,6 +139,6 @@ go test -race ./...
 ## 注意事项
 
 - `collection` 的 `Map` / `Filter` / `Chunk` 等均为值语义，不修改入参；`Chunk` 返回的子切片与原切片共享底层数组
-- `container` 下的数据结构均**非并发安全**，需并发时由调用方加锁
-- `concurrent.Generate` 在消费方提前退出时会泄漏生产 goroutine，此类场景请使用 `GenerateCtx`
+- 所有类型（`Set`、`concurrent.Map`、`LRU`、`PriorityQueue`、`Ring` 等）均为**方法级并发安全**：单个方法可并发调用，但"先查再改"这类复合操作不保证原子性，需要时由调用方自行加锁
+- `concurrent.Generate` 内部无后台 goroutine（缓冲等于元素个数），消费方提前退出无泄漏
 - `sqlx.EncryptColumn` 的密钥管理遵循"密钥永不进代码库"原则

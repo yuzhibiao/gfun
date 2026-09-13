@@ -2,8 +2,30 @@ package sqlx
 
 import (
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestSetEncryptKeyConcurrent(t *testing.T) {
+	keys := [][]byte{
+		[]byte("0123456789abcdef"),
+		[]byte("0123456789abcdef01234567"),
+		[]byte("0123456789abcdef0123456789abcdef"),
+	}
+	col := EncryptColumn[string]{Val: "secret", Valid: true}
+	var wg sync.WaitGroup
+	for i := 0; i < 30; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			_ = SetEncryptKey(keys[n%3])
+			_, _ = col.Value()
+			var c2 EncryptColumn[string]
+			_ = c2.Scan("MTIz") // 无效密文，预期报错；仅为触发并发读取
+		}(i)
+	}
+	wg.Wait()
+}
 
 func TestEncryptColumnScanNilWithoutKey(t *testing.T) {
 	// 此测试必须位于 TestSetEncryptKey 之前运行（依赖全局密钥尚未设置）

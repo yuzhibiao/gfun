@@ -1,6 +1,35 @@
 package collection
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
+
+func TestSetConcurrent(t *testing.T) {
+	s := NewSet[int]()
+	a := NewSet(10, 11)
+	b := NewSet(11, 12)
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 100; i++ {
+				k := (g*100 + i) % 30
+				s.Add(k)
+				s.Has(k)
+				s.Len()
+				s.ToSlice()
+				s.Intersect(a)
+				s.Union(a, b) // 并发读 a/b 并发写 s，验证无嵌套锁死锁
+				if i%5 == 0 {
+					s.Delete(k)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+}
 
 func TestSetBasic(t *testing.T) {
 	s := NewSet(1, 2)

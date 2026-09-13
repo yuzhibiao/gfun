@@ -1,8 +1,11 @@
 package container
 
+import "sync"
+
 // Ring 是固定容量的环形缓冲，写满后新数据覆盖最旧数据。
-// 适合滑动窗口、限流统计等场景。
+// 适合滑动窗口、限流统计等场景。方法级并发安全。
 type Ring[T any] struct {
+	mu   sync.Mutex
 	buf  []T
 	head int // 下一个写入位置
 	full bool
@@ -18,6 +21,8 @@ func NewRing[T any](capacity int) *Ring[T] {
 
 // Push 写入一个元素。
 func (r *Ring[T]) Push(v T) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.buf[r.head] = v
 	r.head = (r.head + 1) % len(r.buf)
 	if r.head == 0 {
@@ -27,6 +32,8 @@ func (r *Ring[T]) Push(v T) {
 
 // Len 返回当前元素个数。
 func (r *Ring[T]) Len() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.full {
 		return len(r.buf)
 	}
@@ -35,7 +42,12 @@ func (r *Ring[T]) Len() int {
 
 // All 按写入顺序（旧到新）返回所有元素的副本。
 func (r *Ring[T]) All() []T {
-	n := r.Len()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := len(r.buf)
+	if !r.full {
+		n = r.head
+	}
 	out := make([]T, 0, n)
 	start := 0
 	if r.full {

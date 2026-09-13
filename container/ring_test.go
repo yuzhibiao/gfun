@@ -2,8 +2,31 @@ package container
 
 import (
 	"reflect"
+	"sync"
 	"testing"
 )
+
+func TestRingConcurrent(t *testing.T) {
+	r := NewRing[int](64)
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 100; i++ {
+				r.Push(g*100 + i)
+				r.Len()
+				if i%10 == 0 {
+					r.All()
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+	if r.Len() != 64 {
+		t.Errorf("Len() = %d, want 64", r.Len())
+	}
+}
 
 func TestRingUnderfill(t *testing.T) {
 	r := NewRing[int](5)

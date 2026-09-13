@@ -1,10 +1,14 @@
 package container
 
-import "container/heap"
+import (
+	"container/heap"
+	"sync"
+)
 
-// PriorityQueue 是基于二叉堆的优先级队列。
+// PriorityQueue 是基于二叉堆的优先级队列，方法级并发安全。
 type PriorityQueue[T any] struct {
-	h *pqHeap[T]
+	mu sync.Mutex
+	h  *pqHeap[T]
 }
 
 type pqHeap[T any] struct {
@@ -30,20 +34,28 @@ func NewPriorityQueue[T any](less func(a, b T) bool) *PriorityQueue[T] {
 
 // Push 压入一个元素。
 func (q *PriorityQueue[T]) Push(v T) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	heap.Push(q.h, v)
 }
 
 // Pop 弹出最高优先级元素；队列为空时 panic（与 container/heap 行为一致）。
 func (q *PriorityQueue[T]) Pop() T {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return heap.Pop(q.h).(T)
 }
 
 // Peek 查看队首元素但不弹出；队列为空时 panic。
 func (q *PriorityQueue[T]) Peek() T {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return q.h.s[0]
 }
 
 // Len 返回元素个数。
 func (q *PriorityQueue[T]) Len() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return q.h.Len()
 }

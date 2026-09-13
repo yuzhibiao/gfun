@@ -56,6 +56,32 @@ func TestMapRangeModify(t *testing.T) {
 	}
 }
 
+func TestMapConcurrentMixed(t *testing.T) {
+	m := NewMap[int, int]()
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				k := (g*200 + i) % 50
+				m.Set(k, i)
+				m.Get(k)
+				m.Len()
+				// Range 快照版允许回调内读写
+				m.Range(func(k, v int) bool {
+					m.Get(k)
+					return true
+				})
+				if i%10 == 0 {
+					m.Delete(k)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
 func TestPool(t *testing.T) {
 	p := NewPool(func() []byte { return make([]byte, 8) })
 	buf := p.Get()

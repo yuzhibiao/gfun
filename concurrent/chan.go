@@ -1,36 +1,15 @@
 // Package concurrent 提供并发辅助：channel 工具、泛型并发 map、对象池、重试。
 package concurrent
 
-import "context"
-
-// Generate 把一组值依次发送到返回的 channel，发送完毕后关闭。
-// 注意：消费方提前退出时（未读完即不再接收），生产 goroutine 会阻塞在
-// 发送上造成泄漏，此类场景请使用 GenerateCtx。
+// Generate 把一组值发送到带缓冲的 channel 后立即关闭。
+// 缓冲区大小等于元素个数，因此不存在后台 goroutine，
+// 消费方提前退出也不会有任何泄漏。
 func Generate[T any](vals ...T) <-chan T {
-	out := make(chan T)
-	go func() {
-		defer close(out)
-		for _, v := range vals {
-			out <- v
-		}
-	}()
-	return out
-}
-
-// GenerateCtx 是带取消的 Generate：ctx 取消后停止发送并关闭 channel，
-// 用于消费方可能提前退出的场景，避免 goroutine 泄漏。
-func GenerateCtx[T any](ctx context.Context, vals ...T) <-chan T {
-	out := make(chan T)
-	go func() {
-		defer close(out)
-		for _, v := range vals {
-			select {
-			case out <- v:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	out := make(chan T, len(vals))
+	for _, v := range vals {
+		out <- v // 缓冲足够，永不阻塞
+	}
+	close(out)
 	return out
 }
 

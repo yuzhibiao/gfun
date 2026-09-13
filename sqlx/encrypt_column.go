@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync/atomic"
 )
 
 // EncryptColumn 写库时用 AES-GCM 加密、读库时解密，避免敏感数据明文落库。
@@ -26,18 +27,30 @@ type EncryptColumn[T any] struct {
 	Valid bool
 }
 
-var encryptKey []byte
+// encryptKeyPtr 以原子方式保存全局密钥的副本，
+// 保证 SetEncryptKey 与 Value/Scan 并发调用时无数据竞争。
+var encryptKeyPtr atomic.Pointer[[]byte]
 
 // SetEncryptKey 设置全局加密密钥，长度必须为 16 / 24 / 32 字节
-// （对应 AES-128 / 192 / 256）。应在程序初始化阶段调用一次。
+// （对应 AES-128 / 192 / 256）。内部保存副本，调用后修改 k 不影响已设置的密钥。
+// 建议在程序初始化阶段调用一次；并发调用也是安全的。
 func SetEncryptKey(k []byte) error {
 	switch len(k) {
 	case 16, 24, 32:
-		encryptKey = k
+		cp := append([]byte(nil), k...)
+		encryptKeyPtr.Store(&cp)
 		return nil
 	default:
 		return errors.New("sqlx: encrypt key must be 16, 24 or 32 bytes")
 	}
+}
+
+// currentKey 返回当前密钥；未设置时返回 nil。
+func currentKey() []byte {
+	if p := encryptKeyPtr.Load(); p != nil {
+		return *p
+	}
+	return nil
 }
 
 // Value 实现 driver.Valuer：序列化为 JSON 后 AES-GCM 加密、base64 编码。
@@ -45,14 +58,15 @@ func (c EncryptColumn[T]) Value() (driver.Value, error) {
 	if !c.Valid {
 		return nil, nil
 	}
-	if len(encryptKey) == 0 {
+	key := currentKey()
+	if len(key) == 0 {
 		return nil, errors.New("sqlx: encrypt key not set, call SetEncryptKey first")
 	}
 	b, err := json.Marshal(c.Val)
 	if err != nil {
 		return nil, fmt.Errorf("sqlx: marshal EncryptColumn: %w", err)
 	}
-	return encrypt(b, encryptKey)
+	return encrypt(b, key)
 }
 
 // Scan 实现 sql.Scanner：base64 解码、解密后反序列化为 T。
@@ -62,7 +76,7 @@ func (c *EncryptColumn[T]) Scan(src any) error {
 		c.Val, c.Valid = zero, false
 		return nil
 	}
-	if len(encryptKey) == 0 {
+	if len(currentKey()) == 0 {
 		return errors.New("sqlx: encrypt key not set, call SetEncryptKey first")
 	}
 	var b []byte
@@ -79,7 +93,7 @@ func (c *EncryptColumn[T]) Scan(src any) error {
 	if err != nil {
 		return fmt.Errorf("sqlx: decode EncryptColumn: %w", err)
 	}
-	pt, err := decrypt(data, encryptKey)
+	pt, err := decrypt(data, currentKey())
 	if err != nil {
 		return fmt.Errorf("sqlx: decrypt EncryptColumn: %w", err)
 	}
