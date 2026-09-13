@@ -1,4 +1,4 @@
-// Package container 提供泛型数据结构：LRU 缓存、优先级队列、环形缓冲。
+// Package container 提供泛型数据结构：LRU 缓存、优先级队列、环形缓冲、布隆过滤器。
 // 所有类型的方法均并发安全（单方法原子）；复合操作（如先 Len 再 Pop）
 // 不保证原子性，需要时由调用方自行加锁。
 package container

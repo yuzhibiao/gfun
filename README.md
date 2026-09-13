@@ -10,7 +10,7 @@
 ## 安装
 
 ```bash
-go get github.com/yuzhibiao/gfun@v0.1.0
+go get github.com/yuzhibiao/gfun@v0.2.0
 ```
 
 ## 包结构
@@ -19,8 +19,8 @@ go get github.com/yuzhibiao/gfun@v0.1.0
 |---|---|
 | `collection` | 切片 / map / 集合的泛型操作 |
 | `typex` | 类型与值工具：`Option[T]`、`Pair`、数值操作 |
-| `concurrent` | channel 工具、泛型并发 map、对象池、重试 |
-| `container` | 泛型数据结构：LRU、优先级队列、环形缓冲 |
+| `concurrent` | channel 工具、泛型并发 map、对象池、重试、`SingleFlight` |
+| `container` | 泛型数据结构：LRU、优先级队列、环形缓冲、`BloomFilter` |
 | `sqlx` | 数据库列类型转换：`JsonColumn[T]`、`EncryptColumn[T]` |
 
 ## 使用示例
@@ -85,6 +85,12 @@ v, ok := m.Get("a")
 err := concurrent.Retry(3, time.Second, func() error {
     return callRemoteAPI()
 })
+
+// SingleFlight：同一 key 的并发调用只执行一次，其他等待共享结果
+g := concurrent.NewGroup[string, *User]()
+u, err := g.Do(userID, func() (*User, error) {
+    return loadUserFromDB(userID) // 并发同一 userID 时只查一次
+})
 ```
 
 ### container
@@ -106,6 +112,12 @@ pq.Pop() // 1
 // 环形缓冲（滑动窗口）
 ring := container.NewRing[float64](60) // 最近 60 秒
 ring.Push(0.85)
+
+// 布隆过滤器：拦截"不存在的 key"，防缓存穿透
+bf := container.NewBloomFilter[string](100000, 0.01, container.HashString)
+bf.Add("user:42")
+bf.MayExist("user:42") // true
+bf.MayExist("user:不存在") // 大概率 false，可直接拒绝不查 DB
 ```
 
 ### sqlx
@@ -139,6 +151,8 @@ go test -race ./...
 ## 注意事项
 
 - `collection` 的 `Map` / `Filter` / `Chunk` 等均为值语义，不修改入参；`Chunk` 返回的子切片与原切片共享底层数组
-- 所有类型（`Set`、`concurrent.Map`、`LRU`、`PriorityQueue`、`Ring` 等）均为**方法级并发安全**：单个方法可并发调用，但"先查再改"这类复合操作不保证原子性，需要时由调用方自行加锁
+- 所有类型（`Set`、`concurrent.Map`、`SingleFlight`、`LRU`、`PriorityQueue`、`Ring`、`BloomFilter` 等）均为**方法级并发安全**：单个方法可并发调用，但"先查再改"这类复合操作不保证原子性，需要时由调用方自行加锁
 - `concurrent.Generate` 内部无后台 goroutine（缓冲等于元素个数），消费方提前退出无泄漏
+- `concurrent.SingleFlight.Do` 的 fn 不应 panic；若 panic，等待方会读到零值与 nil 错误
+- `BloomFilter` 标准实现不支持删除元素；空间按最优 m/k 自动计算
 - `sqlx.EncryptColumn` 的密钥管理遵循"密钥永不进代码库"原则
