@@ -1,0 +1,7 @@
+# 编辑器
+.idea/
+.vscode/
+
+# 测试与性能输出
+*.out
+coverage.txt
